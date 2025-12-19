@@ -6,10 +6,11 @@ A real-time monitoring dashboard for Stacks mainnet smart contract interactions 
 ![Node.js](https://img.shields.io/badge/Node.js-18+-green)
 ![React](https://img.shields.io/badge/React-18-blue)
 
-
 ## Deployed Contract
 
-```https://explorer.hiro.so/txid/SP7EGRZWRGBDHWDMJAYER4D40JM8XZCEX14M4ATQ.username-registry-v6?chain=mainnet```
+```
+https://explorer.hiro.so/txid/SP7EGRZWRGBDHWDMJAYER4D40JM8XZCEX14M4ATQ.username-registry-v6?chain=mainnet
+```
 
 ## What are Hiro Chainhooks?
 
@@ -20,15 +21,7 @@ A real-time monitoring dashboard for Stacks mainnet smart contract interactions 
 - Receive webhook notifications when matching transactions occur
 - Build reactive applications without constantly polling the blockchain
 
-**How it works:**
-1. You define a **predicate** specifying what events to monitor (e.g., all calls to your contract)
-2. Chainhooks watches the Stacks blockchain in real-time
-3. When a matching event occurs, it sends a POST request to your webhook URL
-4. Your server processes the event data
-
 ## How This App Uses Chainhooks
-
-This application demonstrates a complete Chainhook integration:
 
 ```
 ┌─────────────────┐     ┌──────────────────┐     ┌─────────────┐
@@ -52,18 +45,27 @@ This application demonstrates a complete Chainhook integration:
 
 ```
 Stacks-Chainhook/
-├── backend/
-│   ├── server.js        # Express server with Chainhook integration
-│   ├── package.json     # Backend dependencies
-│   └── .env.example     # Environment variables template
-├── frontend/
-│   ├── src/
-│   │   ├── App.jsx      # React dashboard component
-│   │   ├── index.css    # Styling
-│   │   └── main.jsx     # Entry point
-│   ├── package.json     # Frontend dependencies
-│   ├── vite.config.js   # Vite configuration
-│   └── index.html       # HTML template
+├── webhooks/                      # Chainhook monitoring app
+│   ├── backend/
+│   │   ├── server.js              # Express server with Chainhook integration
+│   │   ├── package.json           # Backend dependencies
+│   │   └── .env                   # Environment variables (not in git)
+│   └── frontend/
+│       ├── src/
+│       │   ├── App.jsx            # React dashboard component
+│       │   ├── index.css          # Styling
+│       │   └── main.jsx           # Entry point
+│       ├── package.json           # Frontend dependencies
+│       ├── vite.config.js         # Vite configuration
+│       └── index.html             # HTML template
+│
+├── contract-deploy/               # Clarity contract deployment
+│   ├── Clarinet.toml              # Clarinet project config
+│   ├── contracts/                 # Clarity smart contracts
+│   ├── deployments/               # Deployment plans
+│   └── settings/                  # Network settings (not in git)
+│
+├── .gitignore
 └── README.md
 ```
 
@@ -83,7 +85,7 @@ git clone https://github.com/yourusername/Stacks-Chainhook.git
 cd Stacks-Chainhook
 
 # Install backend dependencies
-cd backend
+cd webhooks/backend
 npm install
 
 # Install frontend dependencies
@@ -94,7 +96,7 @@ npm install
 ### 2. Configure Environment Variables
 
 ```bash
-cd backend
+cd webhooks/backend
 cp .env.example .env
 ```
 
@@ -102,7 +104,7 @@ Edit `.env` with your values:
 
 ```env
 HIRO_API_KEY=your_hiro_api_key_here
-CONTRACT_IDENTIFIER=SP2PABAF9FTAJYNFZH93XENAJ8FVY99RRM50D2JG9.my-contract
+CONTRACT_IDENTIFIER=SP7EGRZWRGBDHWDMJAYER4D40JM8XZCEX14M4ATQ.username-registry-v6
 WEBHOOK_BASE_URL=https://your-ngrok-url.ngrok.io
 PORT=3001
 ```
@@ -119,15 +121,20 @@ Copy the HTTPS URL (e.g., `https://abc123.ngrok.io`) to `WEBHOOK_BASE_URL`.
 
 ### 4. Start the Application
 
-**Terminal 1 - Backend:**
+**Terminal 1 - ngrok:**
 ```bash
-cd backend
+ngrok http 3001
+```
+
+**Terminal 2 - Backend:**
+```bash
+cd webhooks/backend
 npm start
 ```
 
-**Terminal 2 - Frontend:**
+**Terminal 3 - Frontend:**
 ```bash
-cd frontend
+cd webhooks/frontend
 npm run dev
 ```
 
@@ -144,6 +151,20 @@ Open [http://localhost:5173](http://localhost:5173) in your browser.
 | `/events` | GET | Returns recent events (supports `?limit=N`) |
 | `/stats` | GET | Returns aggregated statistics |
 
+## Contract Deployment (Optional)
+
+The `contract-deploy/` folder contains Clarity contract files and Clarinet configuration for deploying contracts to mainnet.
+
+```bash
+cd contract-deploy
+
+# Check contracts
+clarinet check
+
+# Deploy to mainnet (requires Clarinet 3.11+)
+clarinet deployments apply -p deployments/default.mainnet-plan.yaml
+```
+
 ## Deployment
 
 ### Deploy to Render
@@ -151,34 +172,23 @@ Open [http://localhost:5173](http://localhost:5173) in your browser.
 1. Create a new **Web Service** on [Render](https://render.com)
 2. Connect your GitHub repository
 3. Configure:
-   - **Root Directory:** `backend`
+   - **Root Directory:** `webhooks/backend`
    - **Build Command:** `npm install`
    - **Start Command:** `npm start`
 4. Add environment variables in Render dashboard
 5. Use the Render URL as `WEBHOOK_BASE_URL`
 
 For the frontend, create a separate **Static Site**:
-- **Root Directory:** `frontend`
+- **Root Directory:** `webhooks/frontend`
 - **Build Command:** `npm install && npm run build`
 - **Publish Directory:** `dist`
 - Add `VITE_API_URL` pointing to your backend URL
-
-### Deploy to Railway
-
-1. Create a new project on [Railway](https://railway.app)
-2. Connect GitHub and select your repository
-3. Add backend service:
-   - Set root to `/backend`
-   - Add environment variables
-4. Add frontend service:
-   - Set root to `/frontend`
-   - Add `VITE_API_URL` environment variable
 
 ## Stacks Builder Challenge Qualification
 
 This project qualifies for the **Stacks Builder Challenge** leaderboard points by demonstrating:
 
-✅ **Real Chainhook Integration** - Uses `@hirosystems/chainhooks-client` to register and receive real-time blockchain events
+✅ **Real Chainhook Integration** - Uses Hiro Chainhooks API to register and receive real-time blockchain events
 
 ✅ **Mainnet Usage** - Monitors actual Stacks mainnet contract interactions (no testnet or mock data)
 
@@ -193,7 +203,7 @@ This project qualifies for the **Stacks Builder Challenge** leaderboard points b
 | Variable | Description | Example |
 |----------|-------------|---------|
 | `HIRO_API_KEY` | API key from Hiro Platform | `abc123...` |
-| `CONTRACT_IDENTIFIER` | Your Stacks contract address | `SP2PABAF9FTAJYNFZH93XENAJ8FVY99RRM50D2JG9.my-contract` |
+| `CONTRACT_IDENTIFIER` | Your Stacks contract address | `SP7EGRZWRGBDHWDMJAYER4D40JM8XZCEX14M4ATQ.username-registry-v6` |
 | `WEBHOOK_BASE_URL` | Public URL for webhook delivery | `https://your-app.onrender.com` |
 | `PORT` | Backend server port | `3001` |
 | `VITE_API_URL` | Backend URL for frontend (production) | `https://your-backend.onrender.com` |
@@ -207,7 +217,7 @@ This project qualifies for the **Stacks Builder Challenge** leaderboard points b
 
 **No events appearing:**
 - Events only appear when real transactions occur on mainnet
-- Test with a manual webhook: `curl -X POST http://localhost:3001/webhook -H "Content-Type: application/json" -d '{"apply":[{"transactions":[{"metadata":{"tx_id":"0x123","sender":"SP123"}}]}]}'`
+- Interact with your contract using the Stacks Explorer sandbox
 
 **Frontend not connecting:**
 - Verify CORS is enabled (it is by default)
