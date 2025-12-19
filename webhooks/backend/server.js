@@ -105,10 +105,10 @@ function parseEventPayload(payload) {
         // Try multiple payload formats
 
         // Format 1: Chainhooks 2.0 - events at top level or in 'data'
-        const events = payload.events || payload.data?.events || [];
-        if (events.length > 0) {
-            console.log(`   Found ${events.length} events in events/data.events`);
-            for (const event of events) {
+        const eventsArray = payload.events || payload.data?.events || [];
+        if (eventsArray.length > 0) {
+            console.log(`   Found ${eventsArray.length} events in events/data.events`);
+            for (const event of eventsArray) {
                 parsedEvents.push({
                     id: uuidv4(),
                     txid: event.tx_id || event.txid || event.transaction_id || "unknown",
@@ -123,8 +123,8 @@ function parseEventPayload(payload) {
             }
         }
 
-        // Format 2: Classic Chainhook - 'apply' array with blocks
-        const apply = payload.apply || [];
+        // Format 2: Chainhook - 'apply' array with blocks (check both payload.apply AND payload.event.apply)
+        const apply = payload.apply || payload.event?.apply || [];
         if (apply.length > 0) {
             console.log(`   Found ${apply.length} blocks in apply array`);
             for (const block of apply) {
@@ -134,16 +134,48 @@ function parseEventPayload(payload) {
                 console.log(`   Block ${blockHeight}: ${transactions.length} transactions`);
 
                 for (const tx of transactions) {
-                    const txDetails = tx.metadata || tx.operations?.[0] || tx;
+                    // Handle metadata structure - Hiro API nests details in metadata
+                    const metadata = tx.metadata || {};
+                    const txDetails = metadata || tx.operations?.[0] || tx;
+
+                    // Extract sender from multiple possible locations
+                    let sender = "unknown";
+                    if (metadata.sender) sender = metadata.sender;
+                    else if (metadata.sender_address) sender = metadata.sender_address;
+                    else if (tx.operations?.[0]?.account?.address) sender = tx.operations[0].account.address;
+
+                    // Extract method/function name
+                    let method = "unknown";
+                    if (metadata.kind?.data?.contract_call?.function_name) {
+                        method = metadata.kind.data.contract_call.function_name;
+                    } else if (metadata.contract_call?.function_name) {
+                        method = metadata.contract_call.function_name;
+                    } else if (txDetails.function_name) {
+                        method = txDetails.function_name;
+                    }
+
+                    // Extract success status - check multiple indicators
+                    let success = true; // Default to true
+                    if (metadata.success === false) {
+                        success = false;
+                    } else if (metadata.receipt?.result) {
+                        // Check if result contains (ok ...) or (err ...)
+                        const result = metadata.receipt.result;
+                        if (result.includes("(err") || result.startsWith("err")) {
+                            success = false;
+                        } else if (result.includes("(ok") || result.startsWith("ok")) {
+                            success = true;
+                        }
+                    }
 
                     parsedEvents.push({
                         id: uuidv4(),
-                        txid: tx.transaction_identifier?.hash || txDetails.tx_id || txDetails.txid || "unknown",
-                        sender: txDetails.sender || txDetails.sender_address || tx.operations?.[0]?.account?.address || "unknown",
+                        txid: tx.transaction_identifier?.hash || metadata.tx_id || txDetails.txid || "unknown",
+                        sender: sender,
                         blockHeight: blockHeight,
                         contractId: CONTRACT_IDENTIFIER,
-                        method: txDetails.contract_call?.function_name || txDetails.kind?.data?.contract_call?.function_name || txDetails.function_name || "unknown",
-                        success: txDetails.success !== false,
+                        method: method,
+                        success: success,
                         timestamp: new Date().toISOString(),
                         raw: tx
                     });
