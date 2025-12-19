@@ -31,30 +31,28 @@ if (!HIRO_API_KEY || !CONTRACT_IDENTIFIER || !WEBHOOK_BASE_URL) {
     process.exit(1);
 }
 
-// Chainhook predicate for monitoring contract calls
-const chainhookId = `contract-monitor-${uuidv4().slice(0, 8)}`;
-
+// Chainhook predicate for monitoring contract calls (Chainhooks 2.0 API format)
 const chainhookPredicate = {
-    chain: "stacks",
-    uuid: chainhookId,
     name: `Monitor ${CONTRACT_IDENTIFIER}`,
-    version: 1,
-    networks: {
-        mainnet: {
-            if_this: {
-                scope: "contract_call",
+    version: "1",
+    chain: "stacks",
+    network: "mainnet",
+    filters: {
+        events: [
+            {
+                type: "contract_call",
                 contract_identifier: CONTRACT_IDENTIFIER,
                 method: "*" // Listen to ALL methods
-            },
-            then_that: {
-                http_post: {
-                    url: `${WEBHOOK_BASE_URL}/webhook`,
-                    authorization_header: "Bearer chainhook-secret"
-                }
-            },
-            start_block: 1, // Start from block 1 to catch all events
-            expire_after_occurrence: null // Never expire
-        }
+            }
+        ]
+    },
+    action: {
+        type: "http_post",
+        url: `${WEBHOOK_BASE_URL}/webhook`,
+        authorization_header: `Bearer chainhook-secret`
+    },
+    options: {
+        enable_on_registration: true
     }
 };
 
@@ -67,7 +65,8 @@ async function registerChainhook() {
     console.log(`   Webhook URL: ${WEBHOOK_BASE_URL}/webhook`);
 
     try {
-        const response = await fetch("https://api.hiro.so/v1/chainhooks", {
+        // Hiro Chainhooks API endpoint for mainnet - /chainhooks/v1/me/ for user-scoped chainhooks
+        const response = await fetch("https://api.mainnet.hiro.so/chainhooks/v1/me/", {
             method: "POST",
             headers: {
                 "Content-Type": "application/json",
@@ -83,7 +82,7 @@ async function registerChainhook() {
 
         const result = await response.json();
         console.log("✅ Chainhook registered successfully!");
-        console.log(`   Chainhook ID: ${chainhookId}`);
+        console.log(`   Chainhook ID: ${result.id || result.uuid || 'N/A'}`);
         return result;
     } catch (error) {
         console.error("❌ Failed to register Chainhook:", error.message);
@@ -94,37 +93,91 @@ async function registerChainhook() {
 
 /**
  * Parse Chainhook event payload and extract transaction details
+ * Handles multiple payload formats from Chainhooks API
  */
 function parseEventPayload(payload) {
     const parsedEvents = [];
 
     try {
-        // Chainhook sends events in 'apply' array for new blocks
-        const apply = payload.apply || [];
+        // Log the payload structure for debugging
+        console.log("   📦 Payload keys:", Object.keys(payload));
 
-        for (const block of apply) {
-            const blockHeight = block.block_identifier?.index || block.metadata?.block_height;
-            const transactions = block.transactions || [];
+        // Try multiple payload formats
 
-            for (const tx of transactions) {
-                const txDetails = tx.metadata || tx;
-
+        // Format 1: Chainhooks 2.0 - events at top level or in 'data'
+        const events = payload.events || payload.data?.events || [];
+        if (events.length > 0) {
+            console.log(`   Found ${events.length} events in events/data.events`);
+            for (const event of events) {
                 parsedEvents.push({
                     id: uuidv4(),
-                    txid: txDetails.tx_id || tx.transaction_identifier?.hash || "unknown",
-                    sender: txDetails.sender || txDetails.sender_address || "unknown",
-                    blockHeight: blockHeight || 0,
-                    contractId: CONTRACT_IDENTIFIER,
-                    method: txDetails.contract_call?.function_name || txDetails.kind?.data?.contract_call?.function_name || "unknown",
-                    success: txDetails.success !== false,
+                    txid: event.tx_id || event.txid || event.transaction_id || "unknown",
+                    sender: event.sender || event.sender_address || event.principal || "unknown",
+                    blockHeight: event.block_height || event.block || 0,
+                    contractId: event.contract_identifier || CONTRACT_IDENTIFIER,
+                    method: event.method || event.function_name || "unknown",
+                    success: event.success !== false,
                     timestamp: new Date().toISOString(),
-                    raw: tx // Store raw data for debugging
+                    raw: event
                 });
             }
         }
+
+        // Format 2: Classic Chainhook - 'apply' array with blocks
+        const apply = payload.apply || [];
+        if (apply.length > 0) {
+            console.log(`   Found ${apply.length} blocks in apply array`);
+            for (const block of apply) {
+                const blockHeight = block.block_identifier?.index || block.block_height || block.metadata?.block_height || 0;
+                const transactions = block.transactions || [];
+
+                console.log(`   Block ${blockHeight}: ${transactions.length} transactions`);
+
+                for (const tx of transactions) {
+                    const txDetails = tx.metadata || tx.operations?.[0] || tx;
+
+                    parsedEvents.push({
+                        id: uuidv4(),
+                        txid: tx.transaction_identifier?.hash || txDetails.tx_id || txDetails.txid || "unknown",
+                        sender: txDetails.sender || txDetails.sender_address || tx.operations?.[0]?.account?.address || "unknown",
+                        blockHeight: blockHeight,
+                        contractId: CONTRACT_IDENTIFIER,
+                        method: txDetails.contract_call?.function_name || txDetails.kind?.data?.contract_call?.function_name || txDetails.function_name || "unknown",
+                        success: txDetails.success !== false,
+                        timestamp: new Date().toISOString(),
+                        raw: tx
+                    });
+                }
+            }
+        }
+
+        // Format 3: Direct transactions array
+        const transactions = payload.transactions || [];
+        if (transactions.length > 0) {
+            console.log(`   Found ${transactions.length} direct transactions`);
+            for (const tx of transactions) {
+                parsedEvents.push({
+                    id: uuidv4(),
+                    txid: tx.tx_id || tx.txid || tx.transaction_id || "unknown",
+                    sender: tx.sender || tx.sender_address || "unknown",
+                    blockHeight: tx.block_height || payload.block_height || 0,
+                    contractId: tx.contract_identifier || CONTRACT_IDENTIFIER,
+                    method: tx.function_name || tx.method || "unknown",
+                    success: tx.success !== false,
+                    timestamp: new Date().toISOString(),
+                    raw: tx
+                });
+            }
+        }
+
+        // If still no events, log the full payload for debugging
+        if (parsedEvents.length === 0) {
+            console.log("   ⚠️ No events parsed. Full payload:");
+            console.log(JSON.stringify(payload, null, 2).slice(0, 1000));
+        }
+
     } catch (error) {
         console.error("Error parsing event payload:", error);
-        // Still create a basic event record
         parsedEvents.push({
             id: uuidv4(),
             txid: "parse-error",

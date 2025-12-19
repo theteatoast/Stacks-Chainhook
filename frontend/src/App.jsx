@@ -1,7 +1,27 @@
 import { useState, useEffect } from 'react'
+import { AppConfig, showConnect, UserSession } from '@stacks/connect'
+import { StacksMainnet } from '@stacks/network'
+import {
+    callReadOnlyFunction,
+    makeContractCall,
+    broadcastTransaction,
+    stringAsciiCV,
+    uintCV,
+    principalCV,
+    cvToString
+} from '@stacks/transactions'
 
 // Backend API URL - change this for production
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001'
+
+// Contract configuration - YOUR DEPLOYED CONTRACT
+const CONTRACT_ADDRESS = 'SP7EGRZWRGBDHWDMJAYER4D40JM8XZCEX14M4ATQ'
+const CONTRACT_NAME = 'theteatoast'
+const NETWORK = new StacksMainnet()
+
+// Stacks Connect config
+const appConfig = new AppConfig(['store_write', 'publish_data'])
+const userSession = new UserSession({ appConfig })
 
 function App() {
     const [events, setEvents] = useState([])
@@ -9,6 +29,166 @@ function App() {
     const [loading, setLoading] = useState(true)
     const [error, setError] = useState(null)
     const [lastUpdated, setLastUpdated] = useState(null)
+
+    // Wallet state
+    const [userData, setUserData] = useState(null)
+    const [txStatus, setTxStatus] = useState(null)
+
+    // Contract interaction state
+    const [username, setUsername] = useState('')
+    const [lookupResult, setLookupResult] = useState(null)
+
+    // Check if user is already logged in
+    useEffect(() => {
+        if (userSession.isUserSignedIn()) {
+            setUserData(userSession.loadUserData())
+        }
+    }, [])
+
+    // Connect wallet
+    const connectWallet = () => {
+        showConnect({
+            appDetails: {
+                name: 'Stacks Chainhook Monitor',
+                icon: window.location.origin + '/vite.svg',
+            },
+            redirectTo: '/',
+            onFinish: () => {
+                setUserData(userSession.loadUserData())
+            },
+            userSession,
+        })
+    }
+
+    // Disconnect wallet
+    const disconnectWallet = () => {
+        userSession.signUserOut()
+        setUserData(null)
+    }
+
+    // Get user's STX address
+    const getAddress = () => {
+        if (!userData) return null
+        return userData.profile?.stxAddress?.mainnet
+    }
+
+    // Lookup username (read-only call)
+    const lookupUsername = async () => {
+        if (!username.trim()) return
+
+        setLookupResult({ loading: true })
+
+        try {
+            const result = await callReadOnlyFunction({
+                contractAddress: CONTRACT_ADDRESS,
+                contractName: CONTRACT_NAME,
+                functionName: 'get-owner',
+                functionArgs: [stringAsciiCV(username)],
+                network: NETWORK,
+                senderAddress: getAddress() || CONTRACT_ADDRESS,
+            })
+
+            setLookupResult({
+                username,
+                result: cvToString(result),
+                success: true
+            })
+        } catch (err) {
+            setLookupResult({
+                username,
+                error: err.message,
+                success: false
+            })
+        }
+    }
+
+    // Register username (write call)
+    const registerUsername = async () => {
+        if (!username.trim() || !userData) {
+            alert('Please connect wallet and enter a username')
+            return
+        }
+
+        setTxStatus({ status: 'pending', message: 'Preparing transaction...' })
+
+        try {
+            const txOptions = {
+                contractAddress: CONTRACT_ADDRESS,
+                contractName: CONTRACT_NAME,
+                functionName: 'register',
+                functionArgs: [stringAsciiCV(username)],
+                network: NETWORK,
+                appDetails: {
+                    name: 'Stacks Chainhook Monitor',
+                    icon: window.location.origin + '/vite.svg',
+                },
+                onFinish: (data) => {
+                    setTxStatus({
+                        status: 'success',
+                        message: 'Transaction submitted!',
+                        txId: data.txId
+                    })
+                },
+                onCancel: () => {
+                    setTxStatus({
+                        status: 'cancelled',
+                        message: 'Transaction cancelled by user'
+                    })
+                }
+            }
+
+            await makeContractCall(txOptions)
+        } catch (err) {
+            setTxStatus({
+                status: 'error',
+                message: err.message
+            })
+        }
+    }
+
+    // Release username (write call)
+    const releaseUsername = async () => {
+        if (!username.trim() || !userData) {
+            alert('Please connect wallet and enter a username')
+            return
+        }
+
+        setTxStatus({ status: 'pending', message: 'Preparing transaction...' })
+
+        try {
+            const txOptions = {
+                contractAddress: CONTRACT_ADDRESS,
+                contractName: CONTRACT_NAME,
+                functionName: 'release',
+                functionArgs: [stringAsciiCV(username)],
+                network: NETWORK,
+                appDetails: {
+                    name: 'Stacks Chainhook Monitor',
+                    icon: window.location.origin + '/vite.svg',
+                },
+                onFinish: (data) => {
+                    setTxStatus({
+                        status: 'success',
+                        message: 'Transaction submitted!',
+                        txId: data.txId
+                    })
+                },
+                onCancel: () => {
+                    setTxStatus({
+                        status: 'cancelled',
+                        message: 'Transaction cancelled by user'
+                    })
+                }
+            }
+
+            await makeContractCall(txOptions)
+        } catch (err) {
+            setTxStatus({
+                status: 'error',
+                message: err.message
+            })
+        }
+    }
 
     // Fetch events and stats from backend
     const fetchData = async () => {
@@ -77,10 +257,17 @@ function App() {
                         Stacks Chainhook Monitor
                     </h1>
                     <div className="header-info">
-                        {lastUpdated && (
-                            <span className="last-updated">
-                                Updated: {formatTime(lastUpdated)}
-                            </span>
+                        {userData ? (
+                            <div className="wallet-info">
+                                <span className="wallet-address">{truncate(getAddress(), 12)}</span>
+                                <button onClick={disconnectWallet} className="disconnect-btn">
+                                    Disconnect
+                                </button>
+                            </div>
+                        ) : (
+                            <button onClick={connectWallet} className="connect-btn">
+                                Connect Wallet
+                            </button>
                         )}
                         <span className={`status-badge ${error ? 'error' : 'live'}`}>
                             {error ? '● Offline' : '● Live'}
@@ -90,6 +277,82 @@ function App() {
             </header>
 
             <main className="main">
+                {/* Contract Interaction Section */}
+                <section className="contract-section">
+                    <h2 className="section-title">Contract Interaction</h2>
+                    <div className="contract-card">
+                        <div className="contract-info">
+                            <span className="contract-label">Contract:</span>
+                            <code>{CONTRACT_ADDRESS}.{CONTRACT_NAME}</code>
+                        </div>
+
+                        <div className="contract-form">
+                            <input
+                                type="text"
+                                placeholder="Enter username"
+                                value={username}
+                                onChange={(e) => setUsername(e.target.value)}
+                                className="username-input"
+                            />
+
+                            <div className="button-group">
+                                <button onClick={lookupUsername} className="action-btn lookup">
+                                    🔍 Lookup Owner
+                                </button>
+                                <button
+                                    onClick={registerUsername}
+                                    className="action-btn register"
+                                    disabled={!userData}
+                                >
+                                    📝 Register
+                                </button>
+                                <button
+                                    onClick={releaseUsername}
+                                    className="action-btn release"
+                                    disabled={!userData}
+                                >
+                                    🔓 Release
+                                </button>
+                            </div>
+                        </div>
+
+                        {/* Lookup Result */}
+                        {lookupResult && (
+                            <div className={`result-box ${lookupResult.success ? 'success' : 'error'}`}>
+                                {lookupResult.loading ? (
+                                    <span>Looking up...</span>
+                                ) : lookupResult.success ? (
+                                    <span>
+                                        <strong>{lookupResult.username}</strong> → {lookupResult.result}
+                                    </span>
+                                ) : (
+                                    <span>Error: {lookupResult.error}</span>
+                                )}
+                            </div>
+                        )}
+
+                        {/* Transaction Status */}
+                        {txStatus && (
+                            <div className={`tx-status ${txStatus.status}`}>
+                                <span>{txStatus.message}</span>
+                                {txStatus.txId && (
+                                    <a
+                                        href={`https://explorer.stacks.co/txid/${txStatus.txId}?chain=mainnet`}
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                    >
+                                        View on Explorer →
+                                    </a>
+                                )}
+                            </div>
+                        )}
+
+                        {!userData && (
+                            <p className="connect-hint">Connect your wallet to register or release usernames</p>
+                        )}
+                    </div>
+                </section>
+
                 {/* Error Message */}
                 {error && (
                     <div className="error-banner">
