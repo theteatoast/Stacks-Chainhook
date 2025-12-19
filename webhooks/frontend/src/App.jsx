@@ -9,12 +9,13 @@ function App() {
     const [loading, setLoading] = useState(true)
     const [error, setError] = useState(null)
     const [lastUpdated, setLastUpdated] = useState(null)
+    const [displayCount, setDisplayCount] = useState(10)
 
     // Fetch events and stats from backend
     const fetchData = async () => {
         try {
             const [eventsRes, statsRes] = await Promise.all([
-                fetch(`${API_URL}/events?limit=20`),
+                fetch(`${API_URL}/events?limit=100`), // Fetch more events
                 fetch(`${API_URL}/stats`)
             ])
 
@@ -66,6 +67,20 @@ function App() {
             </a>
         )
     }
+
+    // Load more transactions
+    const loadMore = () => {
+        setDisplayCount(prev => Math.min(prev + 10, events.length))
+    }
+
+    // Show fewer transactions
+    const showLess = () => {
+        setDisplayCount(10)
+    }
+
+    // Get displayed events
+    const displayedEvents = events.slice(0, displayCount)
+    const hasMore = displayCount < events.length
 
     return (
         <div className="app">
@@ -132,7 +147,12 @@ function App() {
 
                 {/* Recent Transactions */}
                 <section className="events-section">
-                    <h2 className="section-title">Recent Transactions</h2>
+                    <div className="section-header">
+                        <h2 className="section-title">Recent Transactions</h2>
+                        <span className="transaction-count">
+                            Showing {displayedEvents.length} of {events.length}
+                        </span>
+                    </div>
 
                     {loading ? (
                         <div className="loading">
@@ -146,46 +166,62 @@ function App() {
                             <p>Waiting for contract interactions on Stacks mainnet...</p>
                         </div>
                     ) : (
-                        <div className="events-table-wrapper">
-                            <table className="events-table">
-                                <thead>
-                                    <tr>
-                                        <th>Transaction ID</th>
-                                        <th>Sender</th>
-                                        <th>Method</th>
-                                        <th>Block</th>
-                                        <th>Status</th>
-                                        <th>Time</th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    {events.map((event) => (
-                                        <tr key={event.id}>
-                                            <td>
-                                                <TxLink txid={event.txid} />
-                                            </td>
-                                            <td className="sender">
-                                                <code>{truncate(event.sender, 20)}</code>
-                                            </td>
-                                            <td>
-                                                <span className="method-badge">{event.method || 'unknown'}</span>
-                                            </td>
-                                            <td className="block-height">
-                                                {event.blockHeight || 'N/A'}
-                                            </td>
-                                            <td>
-                                                <span className={`status-pill ${event.success ? 'success' : 'failed'}`}>
-                                                    {event.success ? 'Success' : 'Failed'}
-                                                </span>
-                                            </td>
-                                            <td className="timestamp">
-                                                {formatTime(event.timestamp)}
-                                            </td>
+                        <>
+                            <div className="events-table-wrapper scrollable">
+                                <table className="events-table">
+                                    <thead>
+                                        <tr>
+                                            <th>Transaction ID</th>
+                                            <th>Sender</th>
+                                            <th>Method</th>
+                                            <th>Block</th>
+                                            <th>Status</th>
+                                            <th>Time</th>
                                         </tr>
-                                    ))}
-                                </tbody>
-                            </table>
-                        </div>
+                                    </thead>
+                                    <tbody>
+                                        {displayedEvents.map((event) => (
+                                            <tr key={event.id}>
+                                                <td>
+                                                    <TxLink txid={event.txid} />
+                                                </td>
+                                                <td className="sender">
+                                                    <code>{truncate(event.sender, 20)}</code>
+                                                </td>
+                                                <td>
+                                                    <span className="method-badge">{event.method || 'unknown'}</span>
+                                                </td>
+                                                <td className="block-height">
+                                                    {event.blockHeight || 'N/A'}
+                                                </td>
+                                                <td>
+                                                    <span className={`status-pill ${event.success ? 'success' : 'failed'}`}>
+                                                        {event.success ? 'Success' : 'Failed'}
+                                                    </span>
+                                                </td>
+                                                <td className="timestamp">
+                                                    {formatTime(event.timestamp)}
+                                                </td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                            </div>
+
+                            {/* Load More / Show Less Buttons */}
+                            <div className="pagination-controls">
+                                {hasMore && (
+                                    <button onClick={loadMore} className="load-more-btn">
+                                        Load More ({events.length - displayCount} remaining)
+                                    </button>
+                                )}
+                                {displayCount > 10 && (
+                                    <button onClick={showLess} className="show-less-btn">
+                                        Show Less
+                                    </button>
+                                )}
+                            </div>
+                        </>
                     )}
                 </section>
             </main>
