@@ -1,0 +1,17 @@
+---
+id: 0
+name: Mainnet deployment
+network: mainnet
+stacks-node: "https://api.mainnet.hiro.so"
+plan:
+  batches:
+    - id: 0
+      transactions:
+        - contract-publish:
+            contract-name: theteatoast
+            expected-sender: SP7EGRZWRGBDHWDMJAYER4D40JM8XZCEX14M4ATQ
+            cost: 113750
+            path: contracts/counter-contract.clar
+            anchor-block-only: true
+            clarity-version: 4
+      epoch: "2.1"
