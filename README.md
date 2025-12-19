@@ -6,6 +6,11 @@ A real-time monitoring dashboard for Stacks mainnet smart contract interactions 
 ![Node.js](https://img.shields.io/badge/Node.js-18+-green)
 ![React](https://img.shields.io/badge/React-18-blue)
 
+
+## Deployed Contract
+
+```https://explorer.hiro.so/txid/SP7EGRZWRGBDHWDMJAYER4D40JM8XZCEX14M4ATQ.username-registry-v6?chain=mainnet```
+
 ## What are Hiro Chainhooks?
 
 **Chainhooks** are a reorg-aware webhook service for the Stacks blockchain developed by [Hiro](https://www.hiro.so). They allow developers to:
