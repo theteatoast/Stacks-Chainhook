@@ -21,6 +21,7 @@ const MAX_EVENTS = 100; // Keep last 100 events
 const HIRO_API_KEY = process.env.HIRO_API_KEY;
 const CONTRACT_IDENTIFIER = process.env.CONTRACT_IDENTIFIER;
 const WEBHOOK_BASE_URL = process.env.WEBHOOK_BASE_URL;
+const CHAINHOOK_UUID = process.env.CHAINHOOK_UUID; // Optional: If set, skip registration
 
 // Validate required environment variables
 if (!HIRO_API_KEY || !CONTRACT_IDENTIFIER || !WEBHOOK_BASE_URL) {
@@ -88,6 +89,53 @@ async function registerChainhook() {
         console.error("❌ Failed to register Chainhook:", error.message);
         // Don't exit - the server can still receive webhooks if already registered
         console.log("⚠️  Server will continue running. Chainhook may already be registered.");
+    }
+}
+
+/**
+ * Update existing Chainhook's webhook URL
+ */
+async function updateChainhook(uuid) {
+    console.log("🔄 Updating Chainhook webhook URL...");
+    console.log(`   UUID: ${uuid}`);
+    console.log(`   New Webhook URL: ${WEBHOOK_BASE_URL}/webhook`);
+
+    try {
+        // Try to update the chainhook with the current webhook URL
+        const response = await fetch(`https://api.mainnet.hiro.so/chainhooks/v1/me/${uuid}`, {
+            method: "PUT",
+            headers: {
+                "Content-Type": "application/json",
+                "x-api-key": HIRO_API_KEY
+            },
+            body: JSON.stringify(chainhookPredicate)
+        });
+
+        if (!response.ok) {
+            const errorText = await response.text();
+            throw new Error(`HTTP ${response.status}: ${errorText}`);
+        }
+
+        const result = await response.json();
+        console.log("✅ Chainhook updated successfully!");
+        return result;
+    } catch (error) {
+        console.error("❌ Failed to update Chainhook:", error.message);
+        console.log("⚠️  Will try to delete and re-register...");
+
+        // If update fails, try to delete and re-register
+        try {
+            await fetch(`https://api.mainnet.hiro.so/chainhooks/v1/me/${uuid}`, {
+                method: "DELETE",
+                headers: {
+                    "x-api-key": HIRO_API_KEY
+                }
+            });
+            console.log("🗑️  Deleted old chainhook, registering new one...");
+            return await registerChainhook();
+        } catch (deleteError) {
+            console.error("❌ Failed to delete old Chainhook:", deleteError.message);
+        }
     }
 }
 
@@ -338,8 +386,16 @@ app.listen(PORT, async () => {
     console.log(`   Contract: ${CONTRACT_IDENTIFIER}`);
     console.log(`   Webhook URL: ${WEBHOOK_BASE_URL}/webhook\n`);
 
-    // Register Chainhook on startup
-    await registerChainhook();
+    // Check if we already have a registered chainhook
+    if (CHAINHOOK_UUID) {
+        // Update existing chainhook with current webhook URL
+        await updateChainhook(CHAINHOOK_UUID);
+    } else {
+        // Register Chainhook on startup only if no UUID is set
+        console.log("⚠️  No CHAINHOOK_UUID set - attempting to register new chainhook...");
+        await registerChainhook();
+    }
 
     console.log("\n📡 Server ready to receive events!\n");
 });
+
